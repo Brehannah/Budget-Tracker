@@ -1,115 +1,127 @@
+const total = document.querySelector("#total");
+const submit = document.querySelector("#submit");
+const name = document.querySelector("#name");
+const amount = document.querySelector("#amount");
+const button = document.querySelectorAll(".button");
+const tbody = document.querySelector("#tbody");
 let transactions = [];
 let myChart;
+let totalCurrentAmount = 0;
 
-fetch("/api/transaction")
-  .then(response => response.json())
-  .then(data => {
-    transactions = data;
-    populateTable();
-    populateChart();
-  });
+window.addEventListener("load", function () {
+    fetch("/transactions", {
+        method: "GET"
+    })
+        .then(data => data.json())
+        .then(response => {
+            transactions = response;
 
-function populateTable() {
-  const tbody = document.querySelector("#tbody");
-  tbody.innerHTML = "";
+            transactions.forEach(element => {
+                totalCurrentAmount += parseInt(element.value)
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                  <td>${element.name}</td>
+                  <td>${element.value}</td>
+                `;
 
-  transactions.forEach(transaction => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${transaction.name}</td>
-      <td>${transaction.value}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
+                tbody.appendChild(tr);
+            })
+            total.innerHTML = totalCurrentAmount;
+            populateChart();
+        })
+})
 
 function populateChart() {
-  const reversed = transactions.slice().reverse();
-  let sum = 0;
-  const labels = reversed.map(t => {
-    const date = new Date(t.date);
-    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-  });
-  const data = reversed.map(t => {
-    sum += parseInt(t.value);
-    return sum;
-  });
-  if (myChart) {
-    myChart.destroy();
-  }
-  const ctx = document.getElementById("my-chart").getContext("2d");
+    // copy array and reverse it
+    const reversed = transactions.slice().reverse();
+    let sum = 0;
 
-  myChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: "Total Over Time",
-          fill: true,
-          backgroundColor: "#6666ff",
-          data
+    // create date labels for chart
+    const labels = reversed.map(t => {
+        const date = new Date(t.date);
+        return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+    });
+
+    // create incremental values for chart
+    const data = reversed.map(t => {
+        sum += parseInt(t.value);
+        return sum;
+    });
+
+    // remove old chart if it exists
+    if (myChart) {
+        myChart.destroy();
+    }
+
+    const ctx = document.getElementById("my-chart").getContext("2d");
+
+    myChart = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: "Total Over Time",
+                    fill: true,
+                    backgroundColor: "#6666ff",
+                    data
+                }
+            ]
         }
-      ]
-    }
-  });
-}
-
-function sendTransaction(isAdding) {
-  const nameEl = document.querySelector("#t-name");
-  const amountEl = document.querySelector("#t-amount");
-  const errorEl = document.querySelector(".form .error");
-
-  if (nameEl.value === "" || amountEl.value === "") {
-    errorEl.textContent = "Missing Information";
-    return;
-  } else {
-    errorEl.textContent = "";
-  }
-  const transaction = {
-    name: nameEl.value,
-    value: amountEl.value,
-    date: new Date().toISOString()
-  };
-
-  if (!isAdding) {
-    transaction.value *= -1;
-  }
-  transactions.unshift(transaction);
-
-  populateChart();
-  populateTable();
-
-  fetch("/api/transaction", {
-    method: "POST",
-    body: JSON.stringify(transaction),
-    headers: {
-      Accept: "application/json, text/plain, */*",
-      "Content-Type": "application/json"
-    }
-  })
-    .then(response => response.json())
-    .then(data => {
-      if (data.errors) {
-        errorEl.textContent = "Missing Information";
-      } else {
-        nameEl.value = "";
-        amountEl.value = "";
-      }
-    })
-    .catch(err => {
-      saveRecord(transaction);
-      nameEl.value = "";
-      amountEl.value = "";
     });
 }
 
-document.querySelector("#add-btn").addEventListener("click", function (event) {
-  event.preventDefault();
-  sendTransaction(true);
-});
+function fetchInsert(name, amount) {
+    const data = {
+        name: name,
+        value: amount,
+        date: new Date().toLocaleString("en-US")
+    }
+    transactions.unshift(data)
+    fetch("/insertTransaction", {
+        method: "POST",
+        body: JSON.stringify(data),
+        headers: {
+            Accept: "application/json, text/plain, */*",
+            "Content-Type": "application/json"
+        }
+    }).then(response => {
 
-document.querySelector("#sub-btn").addEventListener("click", function (event) {
-  event.preventDefault();
-  sendTransaction(false);
-});
+    }).catch(err => {
+        saveRecord(data)
+    })
+}
+button.forEach(element => {
+    element.addEventListener("click", function () {
+        const id = this.getAttribute("data-id");
+        const currentTotal = parseInt(total.innerHTML);
+        const currentName = name.value;
+        let currentAmount = parseInt(amount.value);
+        if (currentAmount === "" || currentName === "") {
+            alert("Please fill out all the fields");
+            return
+        }
+        if (id === "add") {
+            fetchInsert(currentName, currentAmount);
+            total.innerHTML = currentTotal + currentAmount;
+        } else {
+            fetchInsert(currentName, (currentAmount * -1));
+            currentAmount = currentAmount * -1;
+            total.innerHTML = currentTotal - currentAmount;
+        }
+
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        const td2 = document.createElement("td");
+        td.append(currentName);
+        td2.append(currentAmount);
+        tr.append(td);
+        tr.append(td2);
+        tbody.prepend(tr);
+
+        name.value = "";
+        amount.value = "";
+
+        populateChart();
+    })
+})
